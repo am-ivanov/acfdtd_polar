@@ -42,6 +42,20 @@ int main(int argc, char** argv) {
 	Config cfg;
 	cfg.readConfig(argv[1]);
 
+	for (int i = -cfg.ho; i <= cfg.ho; ++i) {
+		if (i != 0)
+			cout << cfg.fdc.sc1(i) << " ";
+	}
+	cout << endl;
+	for (int i = -cfg.ho; i <= cfg.ho; ++i) {
+		cout << cfg.fdc.c1(i) << " ";
+	}
+	cout << endl;
+	for (int i = -cfg.ho; i <= cfg.ho; ++i) {
+		cout << cfg.fdc.c2(i) << " ";
+	}
+	cout << endl;
+
 	if (rgmpi::worldRank() == 0) {
 		cout << "order = " << cfg.ho * 2 << endl;
 		cout << "nodes = " << cfg.nx << ", " << cfg.ny << endl;
@@ -120,7 +134,7 @@ int main(int argc, char** argv) {
 	y1das.setSizes(
 		cfg.rhoy.getWidth(),
 		cfg.rhoy.getLocalContainer().getWidth(),
-		Dim3D<int_t>(0, cfg.ho, 0),
+		Dim3D<int_t>(1, cfg.ho, 0),
 		1);
 
 	DArrayScatter<real_t, int_t>* u = &das;
@@ -130,6 +144,8 @@ int main(int argc, char** argv) {
 	DArray<real_t, int_t> pmlBot;
 	DArray<real_t, int_t> pmlRad;
 
+	//pmlTop.resize(cfg.nx, cfg.pml_len, 1, cfg.nx, cfg.pml_len, 1, 0, 0, 0, 1, 0, 0, PHINUM);
+	//pmlBot.resize(cfg.nx, cfg.pml_len, 1, cfg.nx, cfg.pml_len, 1, 0, 0, 0, 1, 0, 0, PHINUM);
 	pmlTop.resize(cfg.nx, cfg.pml_len, 1, cfg.nx, cfg.pml_len, 1, 0, 0, 0, 0, 0, 0, PHINUM);
 	pmlBot.resize(cfg.nx, cfg.pml_len, 1, cfg.nx, cfg.pml_len, 1, 0, 0, 0, 0, 0, 0, PHINUM);
 	pmlRad.resize(cfg.pml_len, cfg.ny, 1, cfg.pml_len, cfg.ny, 1, 0, 0, 0, 0, 0, 0, PHINUM);
@@ -245,7 +261,7 @@ int main(int argc, char** argv) {
 							x1(i,j,0,0) /= cfg.dx;
 							if (i2 < cfg.ho) {
 								// copy axis nodes
-								x1(-i-1,j,0,0) = x1(i,j,0,0);
+								x1(-i-1,j,0,0) = -x1(i,j,0,0);
 							}
 							if (i2 > cfg.nx-cfg.pml_len-2 && cfg.isPmlRad) {
 								pmlRad(cfg.nx-i2-2,j2,0,PHI1X) = pmlParams1.at(cfg.nx-i2-2).b * pmlRad(cfg.nx-i2-2,j2,0,PHI1X) + pmlParams1.at(cfg.nx-i2-2).a * x1(i,j,0,0);
@@ -255,6 +271,7 @@ int main(int argc, char** argv) {
 					}
 
 					for (int_t j = 0; j != rhoy.localSize(Y); ++j) {
+						//for (int_t i = -1; i != rhoy.localSize(X); ++i) {
 						for (int_t i = 0; i != rhoy.localSize(X); ++i) {
 							int_t i2 = i + rhoy.origin(X);
 							int_t j2 = j + rhoy.origin(Y);
@@ -325,26 +342,56 @@ int main(int argc, char** argv) {
 								y2 = y2 + pmlBot(i2,cfg.ny-j2-1,0,PHI2Y);
 							}
 
-							// assume rhox constant
-							for (int_t n = 1; n <= cfg.ho; ++n)
-								x1r += cfg.fdc.c1(n) * (p(i+n,j,0,0) - p(i-n,j,0,0));
-							x1r /= cfg.dx;
-							if (i2 > cfg.nx - cfg.pml_len - 1 && cfg.isPmlRad) {
-								pmlRad(cfg.nx-i2-1,j2,0,PHI1R) = pmlParams2.at(cfg.nx-i2-1).b * pmlRad(cfg.nx-i2-1,j2,0,PHI1R) + pmlParams2.at(cfg.nx-i2-1).a * x1r;
-								x1r = x1r + pmlRad(cfg.nx-i2-1,j2,0,PHI1R);
+							if (i2 == 0) x1r = x2;
+							else {
+								// assume rhox constant
+								for (int_t n = 1; n <= cfg.ho; ++n)
+									x1r += cfg.fdc.c1(n) * (p(i+n,j,0,0) - p(i-n,j,0,0));
+								x1r /= cfg.dx;
+								if (i2 > cfg.nx - cfg.pml_len - 1 && cfg.isPmlRad) {
+									pmlRad(cfg.nx-i2-1,j2,0,PHI1R) = pmlParams2.at(cfg.nx-i2-1).b * pmlRad(cfg.nx-i2-1,j2,0,PHI1R) + pmlParams2.at(cfg.nx-i2-1).a * x1r;
+									x1r = x1r + pmlRad(cfg.nx-i2-1,j2,0,PHI1R);
+								}
+								//x1r /= (i2 + 1) * cfg.dx; // divide by radius
+								x1r /= i2 * cfg.dx; // divide by radius
+								x1r /= rhox(i,j,0,0); // divide by density
 							}
-							x1r /= (i2 + 0.5) * cfg.dx; // divide by radius
-							x1r /= rhox(i,j,0,0); // divide by density
 
 							pn(i, j, 0, 0) =
 								2.0 * p.val(i, j, 0, 0) - pn(i, j, 0, 0)
 								+ K(i, j, 0, 0) * sqr(cfg.dt) * (x2 + y2 + x1r);
 
 							// fill axis ghost nodes
-							// idea! calculate them in 3d cartesian coordinates
+							// calculate them in 3d cartesian coordinates
 							if (i2 < cfg.ho) {
-								pn(-i-1, j, 0, 0) = pn(i, j, 0, 0);
+							//if (i2 < cfg.ho-1) {
+								//pn(-i-2, j, 0, 0) = pn(i, j, 0, 0);
+								pn(-i-1, j, 0, 0) = pn(i+1, j, 0, 0);
 							}
+							//if (i2 == 0) {
+							//	real_t x2 = cfg.fdc.c2(0) * p(-1, j, 0, 0);
+							//	for (int_t n = 1; n <= cfg.ho; ++n)
+							//		x2 += cfg.fdc.c2(n) * 2 * p(-1+n,j,0,0);
+							//	x2 /= sqr(cfg.dx);
+							//	x2 /= rhox(0, j, 0, 0);
+
+							//	real_t y2 = 0;
+							//	for (int_t n = 0; n < cfg.ho; ++n)
+							//		y2 += cfg.fdc.sc1(n+1) * (y1(-1,j+n,0,0) - y1(-1,j-1-n,0,0));
+							//	y2 /= cfg.dy;
+
+							//	if (j2 < cfg.pml_len && cfg.isPmlTop) {
+							//		pmlTop(-1,j2,0,PHI2Y) = pmlParams2.at(j2).b * pmlTop(-1,j2,0,PHI2Y) + pmlParams2.at(j).a * y2;
+							//		y2 = y2 + pmlTop(-1,j2,0,PHI2Y);
+							//	} else if (j2 > cfg.ny - cfg.pml_len - 1 && cfg.isPmlBot) {
+							//		pmlBot(-1,cfg.ny-j2-1,0,PHI2Y) = pmlParams2.at(cfg.ny-j2-1).b * pmlBot(-1,cfg.ny-j2-1,0,PHI2Y) + pmlParams2.at(cfg.ny-j2-1).a * y2;
+							//		y2 = y2 + pmlBot(-1,cfg.ny-j2-1,0,PHI2Y);
+							//	}
+
+							//	pn(-1, j, 0, 0) =
+							//		2.0 * p.val(-1, j, 0, 0) - pn(-1, j, 0, 0)
+							//		+ K(-1, j, 0, 0) * sqr(cfg.dt) * (x2 + x2 + y2);
+							//}
 						}
 					}
 
@@ -352,21 +399,17 @@ int main(int argc, char** argv) {
 
 		// insert source
 		for (vector<Source>::iterator it = cfg.src.begin(); it != cfg.src.end(); ++it) {
-			real_t val = sqr(cfg.dt) * it->val.at(step) / (cfg.dx * cfg.dy);
-			if (un->isPresent(Dim3D<int_t>(0,it->j,0))) {
-				un->getNode(Dim3D<int_t>(0,it->j,0),0)
-					+= 0.5 * it->c[L] * val
-					* cfg.K.getNode(Dim3D<int_t>(0,it->j,0),0);
-				un->getNodeGhostGlobal(Dim3D<int_t>(-1,it->j,0),0)
-					+= 0.5 * it->c[L] * val
+			real_t val = sqr(cfg.dt) * it->val.at(step) / (sqr(cfg.dx) * cfg.dy * M_PI / 4.0);
+			if (un->isPresentGhostGlobal(Dim3D<int_t>(0,it->j,0))) {
+				//un->getNodeGhostGlobal(Dim3D<int_t>(-1,it->j,0),0)
+				un->getNodeGhostGlobal(Dim3D<int_t>(0,it->j,0),0)
+					+= it->c[L] * val
 					* cfg.K.getNode(Dim3D<int_t>(0,it->j,0),0);
 			}
-			if (un->isPresent(Dim3D<int_t>(0,it->j+1,0))) {
-				un->getNode(Dim3D<int_t>(0,it->j+1,0),0)
-					+= 0.5 * it->c[R] * val
-					* cfg.K.getNode(Dim3D<int_t>(0,it->j+1,0),0);
-				un->getNodeGhostGlobal(Dim3D<int_t>(-1,it->j+1,0),0)
-					+= 0.5 * it->c[R] * val
+			if (un->isPresentGhostGlobal(Dim3D<int_t>(0,it->j+1,0))) {
+				//un->getNodeGhostGlobal(Dim3D<int_t>(-1,it->j+1,0),0)
+				un->getNodeGhostGlobal(Dim3D<int_t>(0,it->j+1,0),0)
+					+= it->c[R] * val
 					* cfg.K.getNode(Dim3D<int_t>(0,it->j+1,0),0);
 			}
 		}
