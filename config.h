@@ -20,7 +20,7 @@ public:
 	void readReceivers(std::string file);
 
 	int_t nx, ny; // number of nodes
-	real_t ox, oy; // origin, start coordinate
+	real_t oy; // origin, start coordinate
 	real_t dx, dy; // step size
 	real_t ex, ey; // end of computational area
 

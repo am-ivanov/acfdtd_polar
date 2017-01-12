@@ -38,14 +38,15 @@ void Config::readConfig(string file) {
 
 	std::vector<int> a;
 	kconf.getEntry("nodes").getIntArray(a);
+	// ghost nodes -1 and nx are boundary nodes on the grid
+	// in input nx and ny is number of nodes without ghost
 	nx = a.at(0);
 	ny = a.at(1);
 
 	std::vector<double> b;
 	b.clear();
 	kconf.getEntry("origin").getDoubleArray(b);
-	ox = b.at(0);
-	oy = b.at(1);
+	oy = b.at(0);
 
 	b.clear();
 	kconf.getEntry("space_step").getDoubleArray(b);
@@ -55,7 +56,7 @@ void Config::readConfig(string file) {
 	steps = kconf.get<int_t>("time_steps");
 	dt = kconf.get<real_t>("time_step");
 
-	ex = (nx + 1) * dx + ox;
+	ex = nx * dx;
 	ey = (ny + 1) * dy + oy;
 
 	saveStep = kconf.get<int_t>("save_every");
@@ -143,8 +144,8 @@ void Config::readSources(string file) {
 		real_t yr = dy - yl;
 
 		real_t volume = dy;
-		e.c[R] = yr / volume;
-		e.c[L] = yl / volume;
+		e.c[L] = yr / volume;
+		e.c[R] = yl / volume;
 
 		istringstream ss_src;
 #ifdef USE_MPI
@@ -211,17 +212,18 @@ void Config::readReceivers(string file) {
 		ss >> e.x >> e.y;
 		if (ss.eof()) break;
 
-		if (!(ox <= e.x && e.x <= ex)) throw logic_error("Wrong receiver position X");
+		if (!(0 <= e.x && e.x <= ex)) throw logic_error("Wrong receiver position X");
 		if (!(oy <= e.y && e.y <= ey)) throw logic_error("Wrong receiver position Y");
 
-		e.i = static_cast<int_t>((e.x - ox) / dx) - 1;
+		//e.i = static_cast<int_t>((e.x - ox) / dx) - 1;
+		e.i = static_cast<int_t>(e.x / dx);
 		e.j = static_cast<int_t>((e.y - oy) / dy) - 1;
 
 		// distance from node with indexes i,j,k to current node
-		real_t xl = e.x - ox - (e.i + 1) * dx;
+		real_t xl = e.x - e.i * dx;
 		real_t yl = e.y - oy - (e.j + 1) * dy;
 
-		if (e.i == nx) { e.i -= 1; xl = dx; } // e.x == ex
+		if (e.i == nx) { xl = dx; } // e.x == ex
 		if (e.j == ny) { e.j -= 1; yl = dy; } // e.y == ey
 
 		real_t xr = dx - xl;
